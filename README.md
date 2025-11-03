@@ -28,6 +28,7 @@ sequenceDiagram
     participant C as LottoController
     participant M as Money
     participant F as LottoFactory
+    participant G as LottoGenerator
     participant L as Lotto
     participant W as WinningNumbers
     participant R as LottoResults
@@ -41,19 +42,24 @@ Note over U,C: 🎫 1단계: 로또 구매
             M-->>C: 유효한 Money 객체
         else 검증 실패
             M-->>C: IllegalArgumentException
-            C->>O: 메시지 출력
+            C->>O: 에러 메시지 출력
             O->>U: 에러 표시
         end
     end
 
     C->>M: getLottoCount() 호출
-    M-->>C: 구매 가능한 로또 개수
-    loop N번 (로또 개수만큼)
-        C->>F: generateLotto() 호출
-        F->>F: Randoms.pickUniqueNumbersInRange(1,45,6)
-        F-->>C: 생성된 번호 목록
-        C->>L: Lotto 객체 생성
+    M-->>C: 구매 가능한 로또 개수(count)
+
+    C->>F: generate(count) 호출
+    F->>G: generate(count) 위임
+
+    loop count번
+        G->>G: Randoms.pickUniqueNumbersInRange(1,45,6)
+        G->>L: Lotto(numbers) 생성
     end
+    G-->>F: List<Lotto> 반환
+    F-->>C: List<Lotto> 반환
+
     C->>O: 구매한 로또 목록 출력
     O->>U: 로또 목록 표시
     		
@@ -66,7 +72,7 @@ Note over U,C: 🏆 2단계: 당첨 번호 입력
             W-->>C: 당첨 번호 객체 생성됨
         else 검증 실패
             W-->>C: IllegalArgumentException
-            C->>O: 메시지 출력
+            C->>O: 에러 메시지 출력
             O->>U: 에러 표시
         end
     end
@@ -79,19 +85,18 @@ Note over U,C: 🏆 2단계: 당첨 번호 입력
             W-->>C: 최종 당첨 번호 객체 완성
         else 검증 실패
             W-->>C: IllegalArgumentException
-            C->>O: 메시지 출력
+            C->>O: 에러 메시지 출력
             O->>U: 에러 표시
         end
     end
     Note over U,C: 📊 3단계: 결과 분석 및 출력
     C->>R: LottoResults 생성 (List<Lotto>, WinningNumbers)
     loop 각 로또에 대해
-        R->>R: calculateRank(lotto, winningNumbers)
         R->>R: 등수별 카운트 증가
         R->>R: 총 상금 누적
     end
-    R->>R: 수익률 계산
-    R-->>C: 분석 결과
+    C->>R: calculateYield(구입 금액) 호출
+    R-->>C: 수익률 반환
     C->>O: 당첨 통계 출력
     O->>U: 통계 표시
     C->>O: 수익률 출력
@@ -103,17 +108,19 @@ Note over U,C: 🏆 2단계: 당첨 번호 입력
 
 ## **🧱 객체 역할 요약**
 
-| 객체 이름             | 역할(책임)                                      | 보유 값(상태)                           | 주요 행위                                                                       |
-|-------------------|---------------------------------------------|------------------------------------|-----------------------------------------------------------------------------|
-| `Money`           | 구입 금액을 표현하고 관련 규칙을 검증하는 값 객체                | * 구입 금액                            | - 금액 유효성 검사, 구매 가능한 로또 수 계산                                                 |
-| `Lotto`           | 로또 한 장을 표현하며 번호 규칙(개수, 범위, 중복)의 불변성을 보장     | * 6개의 로또 번호                        | - 번호 정렬 및 중복 검사, 당첨 번호와 일치 개수 계산, 보너스 포함 여부 확인                              |
-| `LottoFactory`    | 로또 규칙에 맞는 랜덤 번호를 생성하여 `Lotto` 객체를 만드는 책임을 짐 |                                    | -`Randoms.pickUniqueNumbersInRange()`를 사용해 로또 번호 생성                         |
-| `WinningNumbers`  | 당첨 번호와 보너스 번호를 가지며 관련 규칙(개수, 범위, 중복)을 책임짐   | * 6개 당첨 번호, 1개 보너스 번호              | - 당첨 번호 유효성 검사, 보너스 번호 유효성 검사 및 중복 확인                                       |
-| `LottoRank`       | 당첨 등수(1~5등, 꽝)의 조건(일치 개수, 보너스)과 상금을 정의      | *Enum class(일치 개수, 보너스 포함여부,당첨 금액) | - 일치 수/보너스 포함 여부로 등수 반환, 상금 반환                                              |
-| `LottoResults`    | 전체 당첨 결과를 집계하고 최종 수익률을 계산                   | * 등수별 당첨 횟수, 누적 상금                 | - 각 로또에 대한 등수 계산, 당첨 결과 누적, 수익률 계산                                          |
-| `InputView`       | 사용자로부터 입력을 받는 모든 로직을 담당                     | * 입력 접두사                           | - 사용자로부터 입력을 받음, `camp.nextstep.edu.missionutils.Console`의 `readLine()`을 사용 |
-| `OutputView`      | 사용자에게 정보를 출력하는 모든 로직을 담당                    | * 출력 접두사                           | - 구매한 로또 목록 출력, 당첨 결과 출력, 수익률 출력                                            |
-| `LottoController` | 애플리케이션의 전체 실행 흐름을 조율. View와 Domain 객체들을 연결  |                                    | - 전체 흐름 제어                                                                  |
+| 객체 이름                  | 역할(책임)                                      | 보유 값(상태)                        | 주요 행위                                                            |
+|------------------------|---------------------------------------------|---------------------------------|------------------------------------------------------------------|
+| `Money`                | 구입 금액을 표현하고 관련 규칙을 검증하는 값 객체                | * 구입 금액                         | - 금액 유효성 검사, 구매 가능한 로또 수 계산                                      |
+| `Lotto`                | 로또 한 장을 표현하며 번호 규칙(개수, 범위, 중복)의 불변성을 보장     | * 6개의 로또 번호                     | - 번호 정렬 및 중복 검사, 당첨 번호와 일치 개수 계산, 보너스 포함 여부 확인                   |
+| `LottoGenerator`       | 로또 번호 생성 전략을 추상화하는 인터페이스                    |                                 | - 요청된 개수만큼 `Lotto` 리스트 생성                                        |
+| `RandomLottoGenerator` | 랜덤 전략으로 로또 규칙에 맞는 번호를 생성                    |                                 | - `Randoms.pickUniqueNumbersInRange()`를 사용해 번호 생성, `Lotto` 객체 생성 |
+| `LottoFactory`         | 로또 생성 전략(`LottoGenerator`)에 생성 요청을 위임하는 팩토리 | * `LottoGenerator` 구현체          | - 생성기 null 검증, 생성 개수 검증, 생성기에 로또 생성 위임                           |
+| `WinningNumbers`       | 당첨 번호와 보너스 번호를 가지며 관련 규칙(개수, 범위, 중복)을 책임짐   | * 6개 당첨 번호, 1개 보너스 번호           | - 당첨 번호 유효성 검사, 보너스 번호 유효성 검사 및 중복 확인                            |
+| `LottoRank`            | 당첨 등수(1~5등, 꽝)의 조건(일치 개수, 보너스)과 상금을 정의      | * Enum(일치 개수, 보너스 포함 여부, 당첨 금액) | - 일치 수/보너스 포함 여부로 등수 반환, 상금 반환                                   |
+| `LottoResults`         | 전체 당첨 결과를 집계하고 최종 수익률을 계산                   | * 등수별 당첨 횟수, 누적 상금              | - 각 로또에 대한 등수 계산, 당첨 결과 누적, 수익률 계산                               |
+| `InputView`            | 사용자로부터 입력을 받는 모든 로직을 담당                     | * 입력 접두사                        | - 사용자로부터 입력을 받음, `Console.readLine()` 사용                         |
+| `OutputView`           | 사용자에게 정보를 출력하는 모든 로직을 담당                    | * 출력 접두사                        | - 구매한 로또 목록 출력, 당첨 결과 출력, 수익률 출력                                 |
+| `LottoController`      | 애플리케이션의 전체 실행 흐름을 조율. View와 Domain 객체들을 연결  |                                 | - 전체 흐름 제어                                                       |
 
 <br>
 <br>
@@ -197,6 +204,8 @@ Note over U,C: 🏆 2단계: 당첨 번호 입력
 | 로또 번호가 1~45 범위를 벗어나는 경우    | `[ERROR] 로또 번호는 1부터 45 사이여야 합니다.`         |
 | 보너스 번호가 1~45 범위를 벗어난 경우    | `[ERROR] 보너스 번호는 1부터 45 사이여야 합니다.`        |
 | 보너스 번호가 당첨 번호와 중복되는 경우     | `[ERROR] 보너스 번호는 당첨 번호와 중복될 수 없습니다.`      |
+| 로또 생성기가 null인 경우           | `[ERROR] 로또 생성기는 null일 수 없습니다.`           |
+| 로또 생성 개수가 0 이하인 경우         | `[ERROR] 로또 생성 개수는 1개 이상이어야 합니다.`         |
 
 <br>
 <br>
@@ -222,9 +231,9 @@ Note over U,C: 🏆 2단계: 당첨 번호 입력
 구현 과정에서 배우고 고민했던 것들을 기록하는 공간입니다.
 
 - [도메인 설계시 고려했던 것](https://github.com/JohnPrk/java-lotto-8/issues/1)
-- [Inside-Out vs Outside-In TDD 선택 이유](https://github.com/JohnPrk/java-lotto-8/issues/2**)
-- [Supplier는 무엇인가?](https://github.com/JohnPrk/java-lotto-8/issues/3**)
-- [2023년 구현 vs 지금 구현 비교[회고]](https://github.com/JohnPrk/java-lotto-8/issues/4**)
+- [Inside-Out vs Outside-In TDD 선택 이유](https://github.com/JohnPrk/java-lotto-8/issues/2)
+- [Supplier는 무엇인가?](https://github.com/JohnPrk/java-lotto-8/issues/3)
+- [2023년 구현 vs 지금 구현 비교[회고]](https://github.com/JohnPrk/java-lotto-8/issues/4)
 
 <br>
 <br>
